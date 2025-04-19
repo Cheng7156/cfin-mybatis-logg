@@ -1,0 +1,71 @@
+<!-- Plugin Configuration File. Read more: https://plugins.jetbrains.com/docs/intellij/plugin-configuration-file.html -->
+<idea-plugin>
+  <!-- Unique identifier of the plugin. It should be FQN. It cannot be changed between the plugin versions. -->
+  <id>com.cfin.novel.cfin-mybatis-log</id>
+
+  <!-- Public plugin name should be written in Title Case.
+       Guidelines: https://plugins.jetbrains.com/docs/marketplace/plugin-overview-page.html#plugin-name -->
+  <name>MyBatis SQL Logger</name>
+
+  <!-- A displayed Vendor name or Organization ID displayed on the Plugins Page. -->
+  <vendor email="support@cfin.com" url="https://www.cfin.com">CFin</vendor>
+
+  <!-- Description of the plugin displayed on the Plugin Page and IDE Plugin Manager.
+       Simple HTML elements (text formatting, paragraphs, and lists) can be added inside of <![CDATA[ ]]> tag.
+       Guidelines: https://plugins.jetbrains.com/docs/marketplace/plugin-overview-page.html#plugin-description -->
+  <description><![CDATA[
+    <h2>MyBatis SQL 日志记录器 - 专业的SQL日志工具</h2>
+    
+    <p>一款功能强大且界面优雅的工具，在专用窗口中实时显示MyBatis和MyBatis-Plus的SQL执行日志，
+    让SQL调试和优化变得轻松简单。</p>
+    
+    <h3>✨ 核心功能</h3>
+    <ul>
+      <li><b>实时SQL日志</b> - 捕获并显示执行过程中的SQL语句</li>
+      <li><b>可视化语法高亮</b> - 采用色彩编码的SQL元素，提升可读性</li>
+      <li><b>参数类型显示</b> - 清晰展示参数值及其数据类型</li>
+      <li><b>完整SQL生成</b> - 自动生成带实际参数值的可执行SQL</li>
+      <li><b>执行时间跟踪</b> - 通过精确的执行时间测量监控查询性能</li>
+      <li><b>智能表名过滤</b> - 快速按表名或SQL内容筛选日志</li>
+      <li><b>一键SQL导出</b> - 将格式化的SQL直接复制到剪贴板，方便重用</li>
+      <li><b>自定义字体大小</b> - 根据个人喜好调整文本大小，获得最佳舒适度</li>
+    </ul>
+    
+    <h3>💡 为什么选择MyBatis SQL日志记录器？</h3>
+    <p>在MyBatis应用程序中，仅依靠控制台输出调试SQL问题可能具有挑战性。
+    此插件提供了一个干净、专用的界面，使SQL分析变得直观高效，
+    节省您宝贵的开发时间。</p>
+    
+    <h3>🛠️ 使用方法</h3>
+    <p>安装后，底部面板将提供"MyBatis Logger"工具窗口。
+    运行应用程序时，所有通过MyBatis执行的SQL语句都将自动出现在工具窗口中，
+    并带有语法高亮和参数信息。</p>
+    
+    <p><i>为MyBatis开发者精心打造 ❤️</i></p>
+  ]]></description>
+
+  <!-- Product and plugin compatibility requirements.
+       Read more: https://plugins.jetbrains.com/docs/intellij/plugin-compatibility.html -->
+  <depends>com.intellij.modules.platform</depends>
+
+  <!-- Extension points defined by the plugin.
+       Read more: https://plugins.jetbrains.com/docs/intellij/plugin-extension-points.html -->
+  <extensions defaultExtensionNs="com.intellij">
+    <toolWindow id="MyBatis Logger" 
+                anchor="bottom" 
+                factoryClass="com.cfin.novel.cfinmybatislog.ui.MyBatisLogToolWindow"
+                icon="AllIcons.Debugger.Console"/>
+    
+    <processListener implementation="com.cfin.novel.cfinmybatislog.listener.MyBatisLogListener"/>
+    <consoleFilterProvider implementation="com.cfin.novel.cfinmybatislog.filter.MyBatisLogFilterProvider"/>
+  </extensions>
+
+  <actions>
+    <action id="MyBatisLogger.ShowToolWindow" 
+            class="com.cfin.novel.cfinmybatislog.actions.ShowMyBatisLogAction" 
+            text="MyBatis Logger" 
+            description="Show MyBatis SQL Logger tool window">
+      <add-to-group group-id="ToolsMenu" anchor="last"/>
+    </action>
+  </actions>
+</idea-plugin>
