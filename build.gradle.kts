@@ -37,7 +37,7 @@ tasks {
 
   patchPluginXml {
     sinceBuild.set("231")
-    untilBuild.set("241.*")
+    untilBuild.set("243.*")
   }
 
   signPlugin {
@@ -48,5 +48,44 @@ tasks {
 
   publishPlugin {
     token.set(System.getenv("PUBLISH_TOKEN"))
+  }
+  
+  // 添加离线构建任务
+  register<Zip>("buildPluginOffline") {
+    group = "intellij"
+    description = "Build plugin in offline mode"
+    
+    dependsOn("buildPlugin")
+    from("${project.buildDir}/distributions")
+    include("*.zip")
+    destinationDirectory.set(file("${project.buildDir}/offline-distributions"))
+  }
+}
+
+// 添加一个本地安装Task
+tasks.register<Copy>("installPlugin") {
+  group = "intellij"
+  description = "Install plugin to local IDE"
+  
+  dependsOn("buildPlugin")
+  
+  from("${project.buildDir}/distributions")
+  include("*.zip")
+  
+  // 根据操作系统确定IDEA插件目录
+  val pluginsDir = when {
+    org.gradle.internal.os.OperatingSystem.current().isWindows -> 
+      "${System.getProperty("user.home")}/AppData/Roaming/JetBrains/IntelliJIdea2023.1/plugins"
+    org.gradle.internal.os.OperatingSystem.current().isMacOsX -> 
+      "${System.getProperty("user.home")}/Library/Application Support/JetBrains/IntelliJIdea2023.1/plugins"
+    else -> 
+      "${System.getProperty("user.home")}/.IntelliJIdea2023.1/config/plugins"
+  }
+  
+  into(pluginsDir)
+  
+  doLast {
+    println("Plugin installed to: $pluginsDir")
+    println("Restart your IDE to apply changes")
   }
 }

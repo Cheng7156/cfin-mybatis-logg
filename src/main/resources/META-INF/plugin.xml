@@ -8,18 +8,41 @@
   <name>MyBatis SQL Logger</name>
 
   <!-- A displayed Vendor name or Organization ID displayed on the Plugins Page. -->
-  <vendor email="support@cfin.com" url="https://www.cfin.com">CFin</vendor>
+  <vendor email="chengfei@980715@gmail.com" url="xxx">CFin</vendor>
 
   <!-- Description of the plugin displayed on the Plugin Page and IDE Plugin Manager.
        Simple HTML elements (text formatting, paragraphs, and lists) can be added inside of <![CDATA[ ]]> tag.
        Guidelines: https://plugins.jetbrains.com/docs/marketplace/plugin-overview-page.html#plugin-description -->
   <description><![CDATA[
+    <h2>MyBatis SQL Logger - Professional SQL Logging Tool</h2>
+    
+    <p>A powerful tool that displays MyBatis and MyBatis-Plus SQL execution logs in a dedicated tool window.
+    Makes SQL debugging and optimization easy with real-time logging and advanced filtering capabilities.</p>
+    
+    <h3>Key Features</h3>
+    <ul>
+      <li><b>Real-time SQL Logging</b> - Capture and display SQL statements as they execute</li>
+      <li><b>Visual Syntax Highlighting</b> - Color-coded SQL elements for better readability</li>
+      <li><b>Parameter Display with Types</b> - Clear visualization of parameter values and types</li>
+      <li><b>Complete SQL Generation</b> - Automatically generate executable SQL with actual parameters</li>
+      <li><b>Execution Time Tracking</b> - Monitor query performance with precise timing</li>
+      <li><b>Smart Table Filtering</b> - Quickly filter logs by table name or SQL content</li>
+      <li><b>One-click SQL Export</b> - Copy formatted SQL directly to clipboard</li>
+      <li><b>Customizable Font Size</b> - Adjust text size for optimal viewing comfort</li>
+    </ul>
+    
+    <p>After installation, a "MyBatis Logger" tool window will be available at the bottom panel.
+    Access via Tools -> MyBatis Logger. When you run your application, all SQL statements 
+    executed through MyBatis will automatically appear in the tool window with syntax highlighting.</p>
+    
+    <hr/>
+    
     <h2>MyBatis SQL 日志记录器 - 专业的SQL日志工具</h2>
     
     <p>一款功能强大且界面优雅的工具，在专用窗口中实时显示MyBatis和MyBatis-Plus的SQL执行日志，
     让SQL调试和优化变得轻松简单。</p>
     
-    <h3>✨ 核心功能</h3>
+    <h3>核心功能</h3>
     <ul>
       <li><b>实时SQL日志</b> - 捕获并显示执行过程中的SQL语句</li>
       <li><b>可视化语法高亮</b> - 采用色彩编码的SQL元素，提升可读性</li>
@@ -31,17 +54,9 @@
       <li><b>自定义字体大小</b> - 根据个人喜好调整文本大小，获得最佳舒适度</li>
     </ul>
     
-    <h3>💡 为什么选择MyBatis SQL日志记录器？</h3>
-    <p>在MyBatis应用程序中，仅依靠控制台输出调试SQL问题可能具有挑战性。
-    此插件提供了一个干净、专用的界面，使SQL分析变得直观高效，
-    节省您宝贵的开发时间。</p>
-    
-    <h3>🛠️ 使用方法</h3>
-    <p>安装后，底部面板将提供"MyBatis Logger"工具窗口。
+    <p>安装后，顶部导航栏 Tools -> MyBatis Logger底部面板将提供"MyBatis Logger"工具窗口。
     运行应用程序时，所有通过MyBatis执行的SQL语句都将自动出现在工具窗口中，
     并带有语法高亮和参数信息。</p>
-    
-    <p><i>为MyBatis开发者精心打造 ❤️</i></p>
   ]]></description>
 
   <!-- Product and plugin compatibility requirements.
@@ -56,7 +71,6 @@
                 factoryClass="com.cfin.novel.cfinmybatislog.ui.MyBatisLogToolWindow"
                 icon="AllIcons.Debugger.Console"/>
     
-    <processListener implementation="com.cfin.novel.cfinmybatislog.listener.MyBatisLogListener"/>
     <consoleFilterProvider implementation="com.cfin.novel.cfinmybatislog.filter.MyBatisLogFilterProvider"/>
   </extensions>
 
@@ -64,7 +78,7 @@
     <action id="MyBatisLogger.ShowToolWindow" 
             class="com.cfin.novel.cfinmybatislog.actions.ShowMyBatisLogAction" 
             text="MyBatis Logger" 
-            description="Show MyBatis SQL Logger tool window">
+            description="A powerful SQL logging tool for MyBatis. Captures SQL statements executed by MyBatis, shows parameters and timing information, enables filtering by table name, and provides one-click SQL copying functionality.">
       <add-to-group group-id="ToolsMenu" anchor="last"/>
     </action>
   </actions>
