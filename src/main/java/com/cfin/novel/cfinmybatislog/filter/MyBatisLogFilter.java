@@ -14,11 +14,14 @@ import java.util.regex.Pattern;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.locks.ReentrantLock;
+import java.util.UUID;
 
 public class MyBatisLogFilter implements Filter {
     private static final Logger LOG = Logger.getInstance(MyBatisLogFilter.class);
     
-    // 扩展匹配模式以支持更多 MyBatis 日志格式
+    // 扩展匹配模式以支持更多 MyBatis 日志格式 - 使用预编译以提高性能
     private static final Pattern SQL_PATTERN = Pattern.compile("(?i)(Preparing:|Parameters:|==>\\s*Preparing:|==>\\s*Parameters:|\\[\\s*mybatis\\s*\\].*?Preparing:|\\[\\s*mybatis\\s*\\].*?Parameters:|Executing query|Execute SQL)");
     private static final Pattern CLEAR_SQL_PATTERN = Pattern.compile("(?i)(Preparing:|==>\\s*Preparing:|\\[\\s*mybatis\\s*\\].*?Preparing:|Executing query|Execute SQL)");
     private static final Pattern PARAMETERS_PATTERN = Pattern.compile("(?i)(Parameters:|==>\\s*Parameters:|\\[\\s*mybatis\\s*\\].*?Parameters:)");
@@ -35,36 +38,76 @@ public class MyBatisLogFilter implements Filter {
     private static final Pattern SPRING_BOOT_SQL = Pattern.compile("(?i)(\\[\\s*\\w+\\s*\\]\\s*DEBUG\\s*.*?Preparing:|.*?DEBUG.*?Preparing:)");
     private static final Pattern SPRING_BOOT_PARAMS = Pattern.compile("(?i)(\\[\\s*\\w+\\s*\\]\\s*DEBUG\\s*.*?Parameters:|.*?DEBUG.*?Parameters:)");
 
-    // 使用实例变量存储状态
-    private String lastSql;
-    private String lastParams;
-    private String lastTime;
+    // 使用实例变量存储状态，每个SQL执行使用一个唯一的标识跟踪
+    private static class SqlExecution {
+        String id;
+        String sql;
+        String params;
+        String time;
+        LocalDateTime timestamp;
+        
+        SqlExecution(String id) {
+            this.id = id;
+            this.timestamp = LocalDateTime.now();
+        }
+        
+        boolean isComplete() {
+            return sql != null && params != null;
+        }
+    }
+    
+    // 使用线程安全队列来存储和处理SQL执行信息
+    private final ConcurrentLinkedQueue<SqlExecution> pendingSqlExecutions = new ConcurrentLinkedQueue<>();
+    private final ReentrantLock processingLock = new ReentrantLock();
     private final Project project;
     private final AtomicBoolean isProcessing = new AtomicBoolean(false);
+    
+    // 用于连续SQL处理的时间阈值 - 1秒内的日志被视为同一SQL组
+    private static final long SQL_GROUP_TIME_THRESHOLD_MS = 1000;
 
     public MyBatisLogFilter(Project project) {
         this.project = project;
         LOG.info("MyBatisLogFilter initialized for project: " + project.getName());
     }
 
+    public void dispose() {
+        LOG.info("Disposing MyBatisLogFilter for project: " + project.getName());
+        pendingSqlExecutions.clear();
+    }
+
     @Nullable
     @Override
     public Result applyFilter(@NotNull String line, int entireLength) {
-        if (isProcessing.get()) {
-            return null;  // 防止重入和死锁
-        }
-        
+        // 快速检查：如果不是SQL日志，立即返回
         if (line == null || line.trim().isEmpty()) {
             return null;
         }
-        
-        try {
-            if (isProcessing.compareAndSet(false, true)) {
-                processLine(line);
-            }
-        } finally {
-            isProcessing.set(false);
+
+        // 快速预检查，避免昂贵的正则表达式匹配
+        boolean mightBeSqlLog = line.contains("SQL") ||
+                               line.contains("Preparing") ||
+                               line.contains("Parameters") ||
+                               line.contains("mybatis") ||
+                               line.contains("Executed") ||
+                               line.contains("Total:");
+
+        if (!mightBeSqlLog) {
+            return null;  // 快速丢弃明显不是SQL日志的行
         }
+
+        // 使用正则表达式进行更精确的匹配
+        boolean isSqlLog = SQL_PATTERN.matcher(line).find() ||
+                         SPRING_BOOT_SQL_PATTERN.matcher(line).find() ||
+                         TIME_PATTERN.matcher(line).find();
+
+        if (!isSqlLog) {
+            return null;  // 不是SQL日志，丢弃
+        }
+        
+        // 在后台线程中处理SQL日志，而不是阻塞过滤器处理
+        ApplicationManager.getApplication().executeOnPooledThread(() -> {
+            processLine(line);
+        });
         
         // 返回 null 表示不进行高亮或其他处理
         return null;
@@ -72,65 +115,111 @@ public class MyBatisLogFilter implements Filter {
     
     private void processLine(String line) {
         try {
-            LOG.debug("Filtering line: " + line);
+            MyBatisLogManager manager = MyBatisLogManager.getInstance(project);
+
+            // 如果日志管理器未启用，快速返回
+            if (!manager.isEnabled()) {
+                return;
+            }
             
-            // 尝试匹配标准 MyBatis 日志格式
-            if (SQL_PATTERN.matcher(line).find() || SPRING_BOOT_SQL_PATTERN.matcher(line).find()) {
-                LOG.info("Matched SQL pattern: " + line);
-                
-                // 使用UI线程安全方式处理
-                ApplicationManager.getApplication().invokeLater(() -> {
-                    MyBatisLogManager manager = MyBatisLogManager.getInstance(project);
-                    
-                    if (CLEAR_SQL_PATTERN.matcher(line).find() || SPRING_BOOT_SQL.matcher(line).find()) {
-                        // 处理 SQL 语句
-                        String sql = extractSql(line);
-                        if (sql != null && !sql.isEmpty()) {
-                            lastSql = sql;
-                            manager.addLog("SQL: " + sql);
-                            LOG.info("Extracted SQL: " + sql);
+            // 处理SQL语句
+            if (CLEAR_SQL_PATTERN.matcher(line).find() || SPRING_BOOT_SQL.matcher(line).find()) {
+                String sql = extractSql(line);
+                if (sql != null && !sql.isEmpty()) {
+                    // 创建新的SQL执行记录
+                    SqlExecution execution = new SqlExecution(UUID.randomUUID().toString());
+                    execution.sql = sql;
+                    pendingSqlExecutions.offer(execution);
+                    manager.addLog("SQL: " + sql);
+                }
+            } 
+            // 处理参数
+            else if (PARAMETERS_PATTERN.matcher(line).find() || SPRING_BOOT_PARAMS.matcher(line).find()) {
+                String params = extractParams(line);
+                if (params != null && !params.isEmpty()) {
+                    // 寻找匹配的SQL执行记录
+                    SqlExecution latestExecution = findOrCreateMatchingSqlExecution();
+                    if (latestExecution != null) {
+                        latestExecution.params = params;
+                        String formattedParams = formatParameters(params);
+                        manager.addLog("Parameters: " + formattedParams);
+                        
+                        // 生成并显示完整SQL
+                        if (latestExecution.sql != null) {
+                            String completeSql = generateCompleteSql(latestExecution.sql, params);
+                            manager.addLog("Complete SQL: " + completeSql);
                         }
-                    } else if (PARAMETERS_PATTERN.matcher(line).find() || SPRING_BOOT_PARAMS.matcher(line).find()) {
-                        // 处理参数
-                        String params = extractParams(line);
-                        if (params != null && !params.isEmpty()) {
-                            lastParams = params;
-                            String formattedParams = formatParameters(params);
-                            manager.addLog("Parameters: " + formattedParams);
-                            LOG.info("Extracted Parameters: " + formattedParams);
-    
-                            // 生成并显示完整 SQL
-                            if (lastSql != null && !lastParams.isEmpty()) {
-                                String completeSql = generateCompleteSql(lastSql, lastParams);
-                                manager.addLog("Complete SQL: " + completeSql);
-                                LOG.info("Generated Complete SQL: " + completeSql);
-                            }
-    
-                            // 显示执行时间
-                            String time = lastTime != null ? lastTime : "0";
-                            String timestamp = LocalDateTime.now().format(DATE_FORMATTER);
-                            manager.addLog("Time: " + time + "ms (" + timestamp + ")");
-    
-                            manager.addLog("----------------------------------------");
+                        
+                        // 显示执行时间
+                        String time = latestExecution.time != null ? latestExecution.time : "0";
+                        String timestamp = latestExecution.timestamp.format(DATE_FORMATTER);
+                        manager.addLog("Time: " + time + "ms (" + timestamp + ")");
+                        manager.addLog("----------------------------------------");
+                        
+                        // 处理完成后检查是否可以从队列中移除
+                        if (latestExecution.isComplete()) {
+                            pendingSqlExecutions.remove(latestExecution);
                         }
                     }
-                });
-            } else if (TIME_PATTERN.matcher(line).find()) {
-                // 捕获执行时间
+                }
+            } 
+            // 捕获执行时间
+            else if (TIME_PATTERN.matcher(line).find()) {
                 Matcher matcher = TIME_PATTERN.matcher(line);
                 if (matcher.find()) {
+                    String time = null;
                     for (int i = 1; i <= matcher.groupCount(); i++) {
                         if (matcher.group(i) != null) {
-                            lastTime = matcher.group(i);
-                            LOG.info("Extracted Time: " + lastTime + "ms");
+                            time = matcher.group(i);
                             break;
+                        }
+                    }
+                    
+                    if (time != null) {
+                        // 更新最近的执行记录
+                        SqlExecution latestExecution = findOrCreateMatchingSqlExecution();
+                        if (latestExecution != null) {
+                            latestExecution.time = time;
                         }
                     }
                 }
             }
+            
+            // 清理过期的SQL执行记录
+            cleanupOldExecutions();
+            
         } catch (Exception e) {
             LOG.error("Error processing line: " + line, e);
         }
+    }
+    
+    /**
+     * 查找匹配的SQL执行记录，如果没有找到则创建一个新的
+     */
+    private SqlExecution findOrCreateMatchingSqlExecution() {
+        LocalDateTime now = LocalDateTime.now();
+        
+        // 首先尝试找到最近的未完成的SQL执行记录
+        for (SqlExecution execution : pendingSqlExecutions) {
+            if (!execution.isComplete() && 
+                java.time.Duration.between(execution.timestamp, now).toMillis() < SQL_GROUP_TIME_THRESHOLD_MS) {
+                return execution;
+            }
+        }
+        
+        // 如果没有找到匹配的，创建一个新的
+        SqlExecution newExecution = new SqlExecution(UUID.randomUUID().toString());
+        pendingSqlExecutions.offer(newExecution);
+        return newExecution;
+    }
+    
+    /**
+     * 清理过期的SQL执行记录
+     */
+    private void cleanupOldExecutions() {
+        LocalDateTime now = LocalDateTime.now();
+        pendingSqlExecutions.removeIf(execution -> 
+            java.time.Duration.between(execution.timestamp, now).toMillis() > SQL_GROUP_TIME_THRESHOLD_MS * 10);
     }
 
     private String extractSql(String text) {
@@ -251,6 +340,7 @@ public class MyBatisLogFilter implements Filter {
             LOG.error("Error formatting parameters: " + params, e);
             return "[" + params + "]";
         }
+
     }
 
     private static String getParamType(String paramValue) {

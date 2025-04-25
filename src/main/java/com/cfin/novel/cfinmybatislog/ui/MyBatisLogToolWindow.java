@@ -23,6 +23,9 @@ import com.intellij.openapi.actionSystem.Presentation;
 import com.intellij.openapi.actionSystem.ActionManager;
 import com.intellij.openapi.actionSystem.ActionToolbar;
 import com.intellij.util.ui.UIUtil;
+import com.intellij.openapi.application.ApplicationManager;
+import com.intellij.openapi.startup.StartupManager;
+import com.intellij.openapi.project.DumbAware;
 import org.jetbrains.annotations.NotNull;
 
 import javax.swing.*;
@@ -40,11 +43,36 @@ import javax.swing.text.StyledDocument;
 import java.awt.*;
 import java.awt.datatransfer.StringSelection;
 import java.awt.event.KeyEvent;
+import java.awt.event.ActionEvent;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.prefs.Preferences;
+import java.util.concurrent.atomic.AtomicBoolean;
+import com.intellij.openapi.wm.ToolWindowFactory;
+import com.intellij.ui.content.ContentFactory;
+import com.intellij.ui.JBColor;
+import com.intellij.ui.components.JBTextField;
+import com.intellij.ui.components.JBLabel;
+import com.intellij.ui.components.JBPanel;
+import com.intellij.ui.components.JBScrollPane;
+import com.intellij.openapi.ide.CopyPasteManager;
+import com.intellij.ui.SearchTextField;
+import com.intellij.util.ui.JBUI;
+import com.intellij.icons.AllIcons;
+import com.intellij.openapi.options.ShowSettingsUtil;
+import com.intellij.openapi.actionSystem.ActionPlaces;
+import com.intellij.openapi.actionSystem.AnActionEvent;
+import com.intellij.openapi.actionSystem.DefaultActionGroup;
+import com.intellij.openapi.actionSystem.AnAction;
+import com.intellij.openapi.actionSystem.Presentation;
+import com.intellij.openapi.actionSystem.ActionManager;
+import com.intellij.openapi.actionSystem.ActionToolbar;
+import javax.swing.AbstractAction;
+import javax.swing.ActionMap;
+import javax.swing.InputMap;
+import javax.swing.KeyStroke;
 
-public class MyBatisLogToolWindow implements ToolWindowFactory {
+public class MyBatisLogToolWindow implements ToolWindowFactory, DumbAware {
     private JTextPane logTextPane;
     private Project project;
     private JLabel statusLabel;
@@ -52,6 +80,12 @@ public class MyBatisLogToolWindow implements ToolWindowFactory {
     private static final int DEFAULT_FONT_SIZE = 12;
     private static final int MIN_FONT_SIZE = 8;
     private static final int MAX_FONT_SIZE = 24;
+    
+    // 延迟初始化配置
+    private static final boolean USE_LAZY_INIT = true;
+    private static final int LAZY_INIT_DELAY_MS = 1000;
+    private final AtomicBoolean isInitialized = new AtomicBoolean(false);
+    private final AtomicBoolean isAppStartupComplete = new AtomicBoolean(false);
     
     // 定义主题色
     private static final Color PRIMARY_COLOR = new JBColor(new Color(0, 120, 212), new Color(75, 110, 175));
@@ -64,8 +98,68 @@ public class MyBatisLogToolWindow implements ToolWindowFactory {
     @Override
     public void createToolWindowContent(@NotNull Project project, @NotNull ToolWindow toolWindow) {
         this.project = project;
-        ContentFactory contentFactory = ContentFactory.getInstance();
         
+        // 创建一个简单的加载中界面
+        JPanel loadingPanel = new JPanel(new BorderLayout());
+        JLabel loadingLabel = new JLabel("Loading MyBatis Logger...", SwingConstants.CENTER);
+        loadingLabel.setFont(loadingLabel.getFont().deriveFont(Font.PLAIN, 14f));
+        loadingPanel.add(loadingLabel, BorderLayout.CENTER);
+        
+        // 先显示加载中界面
+        ContentFactory contentFactory = ContentFactory.getInstance();
+        toolWindow.getContentManager().addContent(contentFactory.createContent(loadingPanel, "", false));
+        
+        // 在应用程序完全启动后初始化
+        ApplicationManager.getApplication().invokeLater(() -> {
+            isAppStartupComplete.set(true);
+            
+            // 如果使用延迟初始化，则等待额外的延迟时间
+            if (USE_LAZY_INIT) {
+                ApplicationManager.getApplication().executeOnPooledThread(() -> {
+                    try {
+                        // 延迟一段时间，确保IDE已完全启动
+                        Thread.sleep(LAZY_INIT_DELAY_MS);
+                        
+                        // 在EDT线程中执行UI初始化
+                        SwingUtilities.invokeLater(() -> {
+                            initializeUiAfterStartup(toolWindow, contentFactory);
+                        });
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                    }
+                });
+            } else {
+                // 不使用额外延迟时间，但仍然等待应用程序完全启动
+                SwingUtilities.invokeLater(() -> {
+                    initializeUiAfterStartup(toolWindow, contentFactory);
+                });
+            }
+        }, project.getDisposed());
+    }
+    
+    /**
+     * 在应用程序完全启动后初始化UI
+     */
+    private void initializeUiAfterStartup(ToolWindow toolWindow, ContentFactory contentFactory) {
+        // 移除加载界面
+        toolWindow.getContentManager().removeAllContents(true);
+        
+        // 创建实际内容
+        JPanel mainPanel = createMainPanel();
+        
+        // 添加到工具窗口
+        toolWindow.getContentManager().addContent(
+            contentFactory.createContent(mainPanel, "", false));
+        
+        // 初始化日志管理器
+        initializeLogManager();
+        
+        isInitialized.set(true);
+        
+        showStatusMessage("MyBatis Logger ready - application startup complete");
+    }
+    
+    private JPanel createMainPanel() {
         // 创建主面板，使用现代化的布局
         JPanel mainPanel = new JPanel(new BorderLayout(0, 0));
         mainPanel.setBorder(JBUI.Borders.empty(8));
@@ -119,12 +213,20 @@ public class MyBatisLogToolWindow implements ToolWindowFactory {
         
         mainPanel.add(statusCard, BorderLayout.SOUTH);
         
-        // 创建内容并添加到工具窗口
-        toolWindow.getContentManager().addContent(contentFactory.createContent(mainPanel, "", false));
-        
-        // 获取日志管理器实例
+        return mainPanel;
+    }
+    
+    private void initializeLogManager() {
+        // 获取日志管理器实例并初始化
         MyBatisLogManager logManager = MyBatisLogManager.getInstance(project);
         logManager.setTextPane(logTextPane);
+        
+        // 确保立即启用日志处理
+        SwingUtilities.invokeLater(() -> {
+            // 延迟一点点时间启用，确保UI已完全准备好
+            logManager.setEnabled(true);
+            showStatusMessage("MyBatis SQL Logger is now active and capturing logs");
+        });
     }
     
     /**
@@ -146,16 +248,34 @@ public class MyBatisLogToolWindow implements ToolWindowFactory {
     private JTextPane createStyledTextPane() {
         JTextPane textPane = new JTextPane();
         textPane.setEditable(false);
-        textPane.setBorder(JBUI.Borders.empty(12));
+        
+        // 获取IDE当前编辑器字体
+        Font editorFont = UIManager.getFont("Editor.font");
+        String fontFamily = editorFont != null ? editorFont.getFamily() : 
+                           "JetBrains Mono".equals(UIManager.get("Editor.font.name")) ? 
+                           "JetBrains Mono" : Font.MONOSPACED;
+        
+        // 设置初始字体和大小
+        int fontSize = getCurrentFontSize();
+        textPane.setFont(new Font(fontFamily, Font.PLAIN, fontSize));
+        
+        // 增加边距，使文本与边缘有适当间距
+        textPane.setBorder(JBUI.Borders.empty(10));
+        
+        // 设置背景色以匹配编辑器背景（自动适应深色/浅色主题）
         textPane.setBackground(UIUtil.getTextFieldBackground());
         
-        // 设置字体大小
-        updateFontSize(textPane);
-        
-        // 添加复制快捷键
-        InputMap im = textPane.getInputMap();
-        ActionMap am = textPane.getActionMap();
-        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_C, Toolkit.getDefaultToolkit().getMenuShortcutKeyMaskEx()), DefaultEditorKit.copyAction);
+        // 禁用默认的复制行为，使用自定义的复制处理
+        textPane.getActionMap().put(DefaultEditorKit.copyAction, new AbstractAction() {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                String selectedText = textPane.getSelectedText();
+                if (selectedText != null && !selectedText.isEmpty()) {
+                    CopyPasteManager.getInstance().setContents(new StringSelection(selectedText));
+                    showStatusMessage("SQL copied to clipboard");
+                }
+            }
+        });
         
         return textPane;
     }
@@ -422,7 +542,14 @@ public class MyBatisLogToolWindow implements ToolWindowFactory {
     private void updateFontSize(JTextPane textPane) {
         if (textPane != null) {
             int fontSize = getCurrentFontSize();
-            Font newFont = new Font(Font.MONOSPACED, Font.PLAIN, fontSize);
+            
+            // 获取IDE当前编辑器字体
+            Font editorFont = UIManager.getFont("Editor.font");
+            String fontFamily = editorFont != null ? editorFont.getFamily() : 
+                               "JetBrains Mono".equals(UIManager.get("Editor.font.name")) ? 
+                               "JetBrains Mono" : Font.MONOSPACED;
+            
+            Font newFont = new Font(fontFamily, Font.PLAIN, fontSize);
             textPane.setFont(newFont);
             
             // 通知日志管理器字体已更改，可能需要重新格式化文本

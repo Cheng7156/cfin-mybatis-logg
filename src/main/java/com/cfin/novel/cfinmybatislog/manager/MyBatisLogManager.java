@@ -8,20 +8,36 @@ import com.intellij.util.ui.UIUtil;
 import org.jetbrains.annotations.NotNull;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.util.ui.JBUI;
+import com.intellij.openapi.Disposable;
 
 import javax.swing.*;
 import javax.swing.text.*;
 import java.awt.*;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.locks.ReentrantLock;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.List;
 import java.util.ArrayList;
+import java.util.Map;
+import java.util.HashMap;
+import java.util.Collections;
+import java.util.UUID;
 
 @Service(Service.Level.PROJECT)
-public final class MyBatisLogManager {
+public final class MyBatisLogManager implements Disposable {
     private static final Logger LOG = Logger.getInstance(MyBatisLogManager.class);
+
+    // 性能优化配置
+    private static final int MAX_LOG_ENTRIES = 5000; // 限制日志条目数量
+    private static final int BATCH_PROCESS_SIZE = 20; // 每批处理的日志数量
+    private static final long PROCESSING_DELAY_MS = 300; // 处理延迟（毫秒）
+    private static final boolean LIMIT_OUTPUT = true; // 是否限制输出
+    private static final int MAX_DOCUMENT_LENGTH = 500000; // 文档最大长度(字符)
 
     // 定义更丰富的颜色模式 - 使用现代UI设计风格的色彩
     // SQL关键字颜色 - 蓝色系
@@ -50,69 +66,71 @@ public final class MyBatisLogManager {
 
     // 数值颜色 - 绿色系
     private static final JBColor NUMBER_COLOR = new JBColor(
-            new Color(9, 134, 88),     // 亮色模式：森林绿
-            new Color(107, 194, 152)   // 暗色模式：薄荷绿
+            new Color(0, 128, 0),      // 亮色模式：森林绿
+            new Color(107, 176, 104)   // 暗色模式：柔和绿
     );
 
-    // 字符串颜色 - 棕红色系
+    // 字符串颜色 - 褐色系
     private static final JBColor STRING_COLOR = new JBColor(
-            new Color(163, 21, 21),    // 亮色模式：深红棕色
-            new Color(206, 145, 120)   // 暗色模式：浅红棕色
+            new Color(163, 21, 21),    // 亮色模式：红褐色
+            new Color(214, 157, 133)   // 暗色模式：淡褐色
     );
 
-    // 类型颜色 - 青色系
+    // 类型颜色 - 紫色系
     private static final JBColor TYPE_COLOR = new JBColor(
-            new Color(0, 120, 120),    // 亮色模式：深青色
-            new Color(78, 201, 176)    // 暗色模式：浅青色
+            new Color(128, 0, 128),    // 亮色模式：深紫色
+            new Color(180, 142, 173)   // 暗色模式：淡紫色
     );
 
-    // NULL值颜色 - 紫色系
+    // NULL值颜色 - 灰色系
     private static final JBColor NULL_COLOR = new JBColor(
-            new Color(128, 0, 128),    // 亮色模式：紫色
-            new Color(170, 128, 190)   // 暗色模式：浅紫色
+            new Color(128, 128, 128),  // 亮色模式：中灰色
+            new Color(160, 160, 160)   // 暗色模式：淡灰色
     );
 
-    // 标签颜色 - 深蓝色系
+    // 标签颜色 - 青色系
     private static final JBColor LABEL_COLOR = new JBColor(
-            new Color(0, 64, 128),     // 亮色模式：深海蓝
-            new Color(120, 156, 205)   // 暗色模式：钢蓝色
+            new Color(0, 128, 128),    // 亮色模式：深青色
+            new Color(0, 173, 173)     // 暗色模式：亮青色
     );
 
-    // 时间颜色 - 橙黄色系
+    // 时间颜色 - 黄色系
     private static final JBColor TIME_COLOR = new JBColor(
-            new Color(184, 134, 11),   // 亮色模式：黄色
-            new Color(218, 165, 32)    // 暗色模式：金黄色
+            new Color(162, 126, 0),    // 亮色模式：金黄色
+            new Color(219, 193, 108)   // 暗色模式：淡黄色
     );
 
-    // 分隔符颜色 - 淡灰色系
+    // 分隔线颜色 - 浅灰色
     private static final JBColor SEPARATOR_COLOR = new JBColor(
-            new Color(160, 160, 160),  // 亮色模式：中灰色
+            new Color(210, 210, 210),  // 亮色模式：浅灰色
             new Color(100, 100, 100)   // 暗色模式：深灰色
     );
 
-    // 字段名颜色 - 紫色系
+    // 字段名颜色 - 绿蓝色系
     private static final JBColor FIELD_COLOR = new JBColor(
-            new Color(120, 0, 160),    // 亮色模式：深紫色
-            new Color(209, 129, 214)   // 暗色模式：淡紫色
+            new Color(0, 112, 112),    // 亮色模式：深绿蓝色
+            new Color(120, 190, 190)   // 暗色模式：浅绿蓝色
     );
 
-    // 补充颜色定义 - 客户特别要求的颜色
+    // 完整SQL颜色 - 青绿色系
     private static final JBColor COMPLETE_SQL_COLOR = new JBColor(
-            new Color(0, 128, 0),      // 亮色模式：绿色
-            new Color(73, 156, 84)     // 暗色模式：深绿色
+            new Color(0, 102, 102),    // 亮色模式：深青绿色
+            new Color(100, 160, 160)   // 暗色模式：浅青绿色
     );
 
+    // 参数颜色 - 紫色系
     private static final JBColor PARAM_COLOR = new JBColor(
-            new Color(128, 0, 128),    // 亮色模式：紫色
-            new Color(175, 122, 197)   // 暗色模式：淡紫色
+            new Color(128, 0, 128),    // 亮色模式：深紫色
+            new Color(180, 142, 173)   // 暗色模式：淡紫色
     );
 
+    // 时间标签颜色 - 黄绿色系
     private static final JBColor TIME_LABEL_COLOR = new JBColor(
-            new Color(184, 134, 11),   // 亮色模式：黄褐色
-            new Color(218, 165, 32)    // 暗色模式：金黄色
+            new Color(128, 128, 0),    // 亮色模式：橄榄色
+            new Color(165, 165, 80)    // 暗色模式：淡黄绿色
     );
 
-    // SQL 关键字正则表达式
+    // SQL正则表达式
     private static final Pattern SQL_KEYWORDS = Pattern.compile("\\b(SELECT|INSERT|UPDATE|DELETE|FROM|WHERE|AND|OR|INNER JOIN|LEFT JOIN|RIGHT JOIN|JOIN|GROUP BY|ORDER BY|HAVING|LIMIT|OFFSET|AS|ON|VALUES|SET|IN|BETWEEN|LIKE|IS NULL|IS NOT NULL|COUNT|SUM|AVG|MAX|MIN|DISTINCT|UNION|ALL)\\b", Pattern.CASE_INSENSITIVE);
     private static final Pattern SQL_OPERATORS = Pattern.compile("(=|!=|<>|>|<|>=|<=|\\+|-|\\*|/|%|\\(|\\)|,|;)");
     private static final Pattern SQL_QUOTES = Pattern.compile("'[^']*'");
@@ -131,9 +149,19 @@ public final class MyBatisLogManager {
     private final Project project;
     private JTextPane textPane;  // 使用标准的JTextPane
     private final ConcurrentLinkedQueue<LogEntry> logQueue = new ConcurrentLinkedQueue<>();
-    private final AtomicBoolean isProcessing = new AtomicBoolean(false);
-    private final List<LogEntry> allLogs = new ArrayList<>();
+    private final List<LogEntry> allLogs = Collections.synchronizedList(new ArrayList<>());
     private String currentFilter = "";
+    
+    // 性能优化相关变量
+    private final AtomicBoolean isProcessing = new AtomicBoolean(false);
+    private ScheduledExecutorService logProcessor;
+    private final ReentrantLock processingLock = new ReentrantLock();
+    private boolean isInitialized = false;
+    private long lastCleanupTime = System.currentTimeMillis();
+    
+    // 启用/禁用处理
+    private final AtomicBoolean enabled = new AtomicBoolean(false);
+    private final ConcurrentLinkedQueue<LogEntry> pendingQueue = new ConcurrentLinkedQueue<>();
 
     // 日志条目类
     private static class LogEntry {
@@ -153,6 +181,67 @@ public final class MyBatisLogManager {
 
     public MyBatisLogManager(Project project) {
         this.project = project;
+        LOG.info("MyBatisLogManager created for project: " + project.getName());
+    }
+    
+    /**
+     * 启用或禁用日志处理
+     * @param enable true表示启用，false表示禁用
+     */
+    public void setEnabled(boolean enable) {
+        boolean wasEnabled = enabled.getAndSet(enable);
+        
+        if (enable && !wasEnabled) {
+            LOG.info("Enabling MyBatis Log Manager");
+            // 如果之前禁用，现在启用，则处理所有挂起的日志
+            processPendingLogs();
+            
+            // 确保处理器已初始化
+            if (!isInitialized) {
+                initializeProcessor();
+            }
+        } else if (!enable && wasEnabled) {
+            LOG.info("Disabling MyBatis Log Manager");
+        }
+    }
+    
+    /**
+     * 处理在禁用期间积累的日志
+     */
+    private void processPendingLogs() {
+        LOG.info("Processing " + pendingQueue.size() + " pending logs");
+        LogEntry entry;
+        while ((entry = pendingQueue.poll()) != null) {
+            logQueue.offer(entry);
+            
+            // 添加到总日志列表，并限制大小
+            synchronized (allLogs) {
+                allLogs.add(entry);
+                // 限制最大日志数量
+                while (allLogs.size() > MAX_LOG_ENTRIES) {
+                    allLogs.remove(0);
+                }
+            }
+        }
+    }
+    
+    private void initializeProcessor() {
+        if (isInitialized) return;
+        
+        LOG.info("Initializing MyBatis Log processor");
+        // 创建后台处理线程
+        logProcessor = Executors.newSingleThreadScheduledExecutor(r -> {
+            Thread thread = new Thread(r, "MyBatis-Log-Processor");
+            thread.setPriority(Thread.MIN_PRIORITY); // 使用最低优先级
+            thread.setDaemon(true); // 设置为守护线程，不阻止JVM退出
+            return thread;
+        });
+        
+        // 周期性处理日志队列
+        logProcessor.scheduleWithFixedDelay(this::processQueuedLogs, 
+            PROCESSING_DELAY_MS, PROCESSING_DELAY_MS, TimeUnit.MILLISECONDS);
+        
+        isInitialized = true;
     }
 
     public static MyBatisLogManager getInstance(Project project) {
@@ -160,6 +249,10 @@ public final class MyBatisLogManager {
     }
 
     public void setTextPane(JTextPane textPane) {
+        if (!isInitialized) {
+            initializeProcessor();
+        }
+        
         this.textPane = textPane;
         
         // 配置文本窗格
@@ -167,8 +260,10 @@ public final class MyBatisLogManager {
         
         // 设置默认样式
         Style defaultStyle = StyleContext.getDefaultStyleContext().getStyle(StyleContext.DEFAULT_STYLE);
-        StyleConstants.setFontFamily(defaultStyle, "JetBrains Mono".equals(UIManager.get("Editor.font.name")) 
-                ? "JetBrains Mono" : "Monospaced");
+        StyleConstants.setFontFamily(defaultStyle, UIManager.getFont("Editor.font") != null ? 
+                UIManager.getFont("Editor.font").getFamily() : 
+                "JetBrains Mono".equals(UIManager.get("Editor.font.name")) ? 
+                "JetBrains Mono" : "Monospaced");
         
         // 定义各种样式
         addStyle(doc, "default", defaultStyle);
@@ -197,12 +292,24 @@ public final class MyBatisLogManager {
         addBoldStyle(doc, "complete-sql-bold", COMPLETE_SQL_COLOR);
         addBoldStyle(doc, "param-bold", PARAM_COLOR);
         addBoldStyle(doc, "time-bold", TIME_COLOR);
+        
+        // 默认初始化为禁用状态下创建的UI，向用户显示状态消息
+        if (!enabled.get()) {
+            try {
+                doc.insertString(0, "MyBatis SQL Logger will start after application initialization completes...\n", doc.getStyle("label-bold"));
+                LOG.info("Added startup message to text pane");
+            } catch (BadLocationException e) {
+                LOG.error("Error adding startup message", e);
+            }
+        }
     }
     
     private void addStyle(StyledDocument doc, String name, Style parent) {
         Style style = doc.addStyle(name, parent);
-        StyleConstants.setFontFamily(style, "JetBrains Mono".equals(UIManager.get("Editor.font.name")) 
-                ? "JetBrains Mono" : "Monospaced");
+        StyleConstants.setFontFamily(style, UIManager.getFont("Editor.font") != null ? 
+                UIManager.getFont("Editor.font").getFamily() : 
+                "JetBrains Mono".equals(UIManager.get("Editor.font.name")) ? 
+                "JetBrains Mono" : "Monospaced");
     }
     
     private void addColorStyle(StyledDocument doc, String name, Color color) {
@@ -219,6 +326,10 @@ public final class MyBatisLogManager {
     public void addLog(String log) {
         if (log == null || log.trim().isEmpty()) return;
         
+        if (!isInitialized) {
+            initializeProcessor();
+        }
+        
         LogEntry entry;
         if (log.startsWith("SQL:")) {
             entry = new LogEntry("sql", log);
@@ -234,28 +345,177 @@ public final class MyBatisLogManager {
             entry = new LogEntry("other", log);
         }
         
-        logQueue.offer(entry);
-        allLogs.add(entry);
-        processLogs();
+        // 检查是否启用处理
+        if (enabled.get()) {
+            // 已启用，正常处理
+            logQueue.offer(entry);
+            
+            // 添加到总日志列表，并限制大小
+            synchronized (allLogs) {
+                allLogs.add(entry);
+                // 限制最大日志数量
+                while (allLogs.size() > MAX_LOG_ENTRIES) {
+                    allLogs.remove(0);
+                }
+            }
+        } else {
+            // 未启用，添加到挂起队列
+            pendingQueue.offer(entry);
+            
+            // 限制挂起队列大小，避免内存问题
+            while (pendingQueue.size() > MAX_LOG_ENTRIES) {
+                pendingQueue.poll();
+            }
+        }
+    }
+    
+    private void processQueuedLogs() {
+        // 如果未启用，则不处理任何内容
+        if (!enabled.get()) {
+            return;
+        }
+        
+        if (!processingLock.tryLock()) {
+            return; // 如果已有线程在处理，直接返回
+        }
+        
+        try {
+            if (textPane == null || textPane.getDocument() == null) return;
+            
+            int processedCount = 0;
+            LogEntry entry;
+            final List<LogEntry> batch = new ArrayList<>(BATCH_PROCESS_SIZE);
+            
+            // 收集一批日志
+            while ((entry = logQueue.poll()) != null && processedCount < BATCH_PROCESS_SIZE) {
+                if (shouldShowLog(entry)) {
+                    batch.add(entry);
+                }
+                processedCount++;
+            }
+            
+            // 如果有日志需要显示，在EDT线程中批量处理
+            if (!batch.isEmpty()) {
+                final StyledDocument doc = textPane.getStyledDocument();
+                
+                // 检查是否需要清理过长的文档(每10秒检查一次)
+                long currentTime = System.currentTimeMillis();
+                if (LIMIT_OUTPUT && currentTime - lastCleanupTime > 10000) {
+                    cleanupTextPane(doc);
+                    lastCleanupTime = currentTime;
+                }
+                
+                SwingUtilities.invokeLater(() -> {
+                    try {
+                        // 分组处理相关的SQL日志条目
+                        List<LogEntry> sortedBatch = groupAndSortLogEntries(batch);
+                        
+                        for (LogEntry logEntry : sortedBatch) {
+                            appendStyledLog(textPane, logEntry);
+                        }
+                        
+                        // 自动滚动到底部
+                        if (!sortedBatch.isEmpty()) {
+                            textPane.setCaretPosition(doc.getLength());
+                        }
+                    } catch (Exception e) {
+                        LOG.error("Error batch processing logs", e);
+                    }
+                });
+            }
+        } catch (Exception e) {
+            LOG.error("Error during log processing", e);
+        } finally {
+            processingLock.unlock();
+        }
+    }
+    
+    /**
+     * 分组并排序日志条目，确保相关SQL日志条目一起显示
+     */
+    private List<LogEntry> groupAndSortLogEntries(List<LogEntry> batch) {
+        Map<String, List<LogEntry>> groups = new HashMap<>();
+        List<LogEntry> result = new ArrayList<>(batch.size());
+        List<LogEntry> separators = new ArrayList<>();
+        String currentGroup = null;
+        
+        // 首先将日志条目分组
+        for (LogEntry entry : batch) {
+            if (entry.type.equals("separator")) {
+                separators.add(entry);
+                currentGroup = null;
+                continue;
+            }
+            
+            if (entry.type.equals("sql")) {
+                // 新SQL开始了一个新组
+                currentGroup = UUID.randomUUID().toString();
+            }
+            
+            if (currentGroup != null) {
+                if (!groups.containsKey(currentGroup)) {
+                    groups.put(currentGroup, new ArrayList<>());
+                }
+                groups.get(currentGroup).add(entry);
+            } else {
+                // 没有组的条目直接添加到结果
+                result.add(entry);
+            }
+        }
+        
+        // 按照SQL, Parameters, Complete SQL, Time的顺序排序每个组
+        for (List<LogEntry> group : groups.values()) {
+            Collections.sort(group, (a, b) -> {
+                int aOrder = getTypeOrder(a.type);
+                int bOrder = getTypeOrder(b.type);
+                return Integer.compare(aOrder, bOrder);
+            });
+            result.addAll(group);
+        }
+        
+        // 添加分隔符
+        result.addAll(separators);
+        
+        return result;
+    }
+    
+    /**
+     * 获取日志类型的排序优先级
+     */
+    private int getTypeOrder(String type) {
+        switch (type) {
+            case "sql": return 1;
+            case "params": return 2;
+            case "complete": return 3;
+            case "time": return 4;
+            case "separator": return 5;
+            default: return 6;
+        }
+    }
+    
+    private void cleanupTextPane(StyledDocument doc) {
+        if (doc.getLength() > MAX_DOCUMENT_LENGTH) {
+            try {
+                // 删除文档开头部分，保留后面的内容
+                int charsToRemove = doc.getLength() - (MAX_DOCUMENT_LENGTH / 2);
+                if (charsToRemove > 0) {
+                    SwingUtilities.invokeLater(() -> {
+                        try {
+                            doc.remove(0, charsToRemove);
+                            LOG.info("Cleaned up text pane, removed " + charsToRemove + " characters");
+                        } catch (BadLocationException e) {
+                            LOG.error("Error cleaning up text pane", e);
+                        }
+                    });
+                }
+            } catch (Exception e) {
+                LOG.error("Error evaluating document length", e);
+            }
+        }
     }
 
     private void processLogs() {
-        if (isProcessing.compareAndSet(false, true)) {
-            try {
-                if (textPane != null) {
-                    LogEntry entry;
-                    while ((entry = logQueue.poll()) != null) {
-                        if (shouldShowLog(entry)) {
-                            appendStyledLog(textPane, entry);
-                        }
-                    }
-                }
-            } catch (Exception e) {
-                LOG.error("Error processing logs", e);
-            } finally {
-                isProcessing.set(false);
-            }
-        }
+        // 该方法保留用于兼容性，实际处理由调度任务完成
     }
 
     private void appendStyledLog(JTextPane textPane, LogEntry entry) {
@@ -285,9 +545,6 @@ public final class MyBatisLogManager {
             
             // 添加换行
             doc.insertString(doc.getLength(), "\n", doc.getStyle("default"));
-            
-            // 自动滚动到底部
-            textPane.setCaretPosition(doc.getLength());
         } catch (BadLocationException e) {
             LOG.error("Error appending styled log", e);
         }
@@ -564,7 +821,9 @@ public final class MyBatisLogManager {
             }
         }
         logQueue.clear();
-        allLogs.clear();
+        synchronized (allLogs) {
+            allLogs.clear();
+        }
     }
     
     /**
@@ -594,5 +853,27 @@ public final class MyBatisLogManager {
         nonStringMatcher.appendTail(sb);
         
         return sb.toString();
+    }
+
+    @Override
+    public void dispose() {
+        if (logProcessor != null) {
+            logProcessor.shutdown();
+            try {
+                if (!logProcessor.awaitTermination(500, TimeUnit.MILLISECONDS)) {
+                    logProcessor.shutdownNow();
+                }
+            } catch (InterruptedException e) {
+                logProcessor.shutdownNow();
+                Thread.currentThread().interrupt();
+            }
+        }
+        clearLogs();
+        LOG.info("MyBatisLogManager disposed for project: " + project.getName());
+    }
+
+    // 添加一个公开的isEnabled方法，让过滤器可以快速检查状态
+    public boolean isEnabled() {
+        return enabled.get();
     }
 } 
