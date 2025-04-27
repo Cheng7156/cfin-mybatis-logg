@@ -40,94 +40,94 @@ public final class MyBatisLogManager implements Disposable {
     private static final int MAX_DOCUMENT_LENGTH = 500000; // 文档最大长度(字符)
 
     // 定义更丰富的颜色模式 - 使用现代UI设计风格的色彩
-    // SQL关键字颜色 - 蓝色系
+    // SQL关键字颜色 - 蓝色系 (更亮的蓝色以增强对比度)
     private static final JBColor KEYWORD_COLOR = new JBColor(
-            new Color(0, 91, 187),     // 亮色模式：皇家蓝
-            new Color(86, 156, 214)    // 暗色模式：活力蓝
+            new Color(0, 119, 255),    // 亮色模式：明亮蓝色
+            new Color(86, 190, 255)    // 暗色模式：天蓝色
     );
 
-    // 表名颜色 - 橙色系
+    // 表名颜色 - 橙色系 (更饱和的橙色)
     private static final JBColor TABLE_COLOR = new JBColor(
-            new Color(209, 105, 0),    // 亮色模式：深橙色
-            new Color(215, 186, 125)   // 暗色模式：金褐色
+            new Color(255, 120, 0),    // 亮色模式：亮橙色
+            new Color(255, 165, 70)    // 暗色模式：金橙色
     );
 
-    // 操作符颜色 - 灰色系
+    // 操作符颜色 - 灰色系 (增加对比度)
     private static final JBColor OPERATOR_COLOR = new JBColor(
-            new Color(85, 85, 85),     // 亮色模式：深灰色
-            new Color(180, 180, 180)   // 暗色模式：浅灰色
+            new Color(60, 60, 60),     // 亮色模式：深灰色
+            new Color(200, 200, 200)   // 暗色模式：亮灰色
     );
 
-    // 函数颜色 - 红色系
+    // 函数颜色 - 红色系 (更明亮的红色)
     private static final JBColor FUNCTION_COLOR = new JBColor(
-            new Color(175, 0, 0),      // 亮色模式：深红色
-            new Color(220, 120, 120)   // 暗色模式：浅红色
+            new Color(220, 30, 30),      // 亮色模式：鲜红色
+            new Color(255, 100, 100)     // 暗色模式：亮红色
     );
 
-    // 数值颜色 - 绿色系
+    // 数值颜色 - 绿色系 (更明亮的绿色)
     private static final JBColor NUMBER_COLOR = new JBColor(
-            new Color(0, 128, 0),      // 亮色模式：森林绿
-            new Color(107, 176, 104)   // 暗色模式：柔和绿
+            new Color(0, 170, 0),      // 亮色模式：亮绿色
+            new Color(107, 220, 104)   // 暗色模式：荧光绿
     );
 
-    // 字符串颜色 - 褐色系
+    // 字符串颜色 - 褐色系 (更鲜明的颜色)
     private static final JBColor STRING_COLOR = new JBColor(
-            new Color(163, 21, 21),    // 亮色模式：红褐色
-            new Color(214, 157, 133)   // 暗色模式：淡褐色
+            new Color(205, 30, 30),    // 亮色模式：鲜红褐色
+            new Color(255, 150, 150)   // 暗色模式：粉红色
     );
 
-    // 类型颜色 - 紫色系
+    // 类型颜色 - 紫色系 (更鲜艳的紫色)
     private static final JBColor TYPE_COLOR = new JBColor(
-            new Color(128, 0, 128),    // 亮色模式：深紫色
-            new Color(180, 142, 173)   // 暗色模式：淡紫色
+            new Color(160, 32, 240),    // 亮色模式：紫色
+            new Color(210, 170, 255)    // 暗色模式：淡紫色
     );
 
-    // NULL值颜色 - 灰色系
+    // NULL值颜色 - 灰色系 (更明亮的中性色)
     private static final JBColor NULL_COLOR = new JBColor(
-            new Color(128, 128, 128),  // 亮色模式：中灰色
-            new Color(160, 160, 160)   // 暗色模式：淡灰色
+            new Color(100, 100, 100),  // 亮色模式：中灰色
+            new Color(180, 180, 180)   // 暗色模式：淡灰色
     );
 
-    // 标签颜色 - 青色系
+    // 标签颜色 - 青色系 (更鲜明的青色)
     private static final JBColor LABEL_COLOR = new JBColor(
-            new Color(0, 128, 128),    // 亮色模式：深青色
-            new Color(0, 173, 173)     // 暗色模式：亮青色
+            new Color(0, 175, 175),    // 亮色模式：青绿色
+            new Color(70, 230, 230)    // 暗色模式：亮青色
     );
 
-    // 时间颜色 - 黄色系
+    // 时间颜色 - 黄色系 (更鲜明的黄色)
     private static final JBColor TIME_COLOR = new JBColor(
-            new Color(162, 126, 0),    // 亮色模式：金黄色
-            new Color(219, 193, 108)   // 暗色模式：淡黄色
+            new Color(210, 160, 0),    // 亮色模式：金黄色
+            new Color(255, 215, 90)    // 暗色模式：明黄色
     );
 
-    // 分隔线颜色 - 浅灰色
+    // 分隔线颜色 - 浅灰色 (更明显的分割线)
     private static final JBColor SEPARATOR_COLOR = new JBColor(
-            new Color(210, 210, 210),  // 亮色模式：浅灰色
-            new Color(100, 100, 100)   // 暗色模式：深灰色
+            new Color(180, 180, 180),  // 亮色模式：浅灰色
+            new Color(120, 120, 120)   // 暗色模式：深灰色
     );
 
-    // 字段名颜色 - 绿蓝色系
+    // 字段名颜色 - 绿蓝色系 (更鲜明的色彩)
     private static final JBColor FIELD_COLOR = new JBColor(
-            new Color(0, 112, 112),    // 亮色模式：深绿蓝色
-            new Color(120, 190, 190)   // 暗色模式：浅绿蓝色
+            new Color(0, 155, 155),    // 亮色模式：蓝绿色
+            new Color(100, 225, 225)   // 暗色模式：亮蓝绿色
     );
 
-    // 完整SQL颜色 - 青绿色系
+    // 完整SQL颜色 - 青绿色系 (更加明显的完整SQL)
     private static final JBColor COMPLETE_SQL_COLOR = new JBColor(
-            new Color(0, 102, 102),    // 亮色模式：深青绿色
-            new Color(100, 160, 160)   // 暗色模式：浅青绿色
+            new Color(0, 135, 95),     // 亮色模式：深青绿色
+            new Color(70, 195, 160)    // 暗色模式：明青绿色
     );
 
-    // 参数颜色 - 紫色系
+    // 参数颜色 - 紫色系 (更鲜明的参数颜色)
     private static final JBColor PARAM_COLOR = new JBColor(
-            new Color(128, 0, 128),    // 亮色模式：深紫色
-            new Color(180, 142, 173)   // 暗色模式：淡紫色
+            new Color(170, 40, 170),    // 亮色模式：亮紫色
+            new Color(210, 150, 210)    // 暗色模式：淡紫色
     );
 
-    // 时间标签颜色 - 黄绿色系
+    // 时间标签颜色 - 黄绿色系 (更鲜明的时间标签)
     private static final JBColor TIME_LABEL_COLOR = new JBColor(
-            new Color(128, 128, 0),    // 亮色模式：橄榄色
-            new Color(165, 165, 80)    // 暗色模式：淡黄绿色
+            new Color(160, 160, 0),    // 亮色模式：橄榄色
+            new Color(200, 200, 60)    // 暗色模式：亮黄绿色
     );
 
     // SQL正则表达式
@@ -160,7 +160,7 @@ public final class MyBatisLogManager implements Disposable {
     private long lastCleanupTime = System.currentTimeMillis();
     
     // 启用/禁用处理
-    private final AtomicBoolean enabled = new AtomicBoolean(false);
+    private final AtomicBoolean enabled = new AtomicBoolean(true);
     private final ConcurrentLinkedQueue<LogEntry> pendingQueue = new ConcurrentLinkedQueue<>();
 
     // 日志条目类
@@ -181,7 +181,9 @@ public final class MyBatisLogManager implements Disposable {
 
     public MyBatisLogManager(Project project) {
         this.project = project;
-        LOG.info("MyBatisLogManager created for project: " + project.getName());
+        // 默认启用日志管理器，避免错过日志
+        this.enabled.set(true);
+        LOG.info("MyBatisLogManager created and enabled for project: " + project.getName());
     }
     
     /**
@@ -199,6 +201,17 @@ public final class MyBatisLogManager implements Disposable {
             // 确保处理器已初始化
             if (!isInitialized) {
                 initializeProcessor();
+            }
+            
+            // 清除初始提示消息
+            if (textPane != null) {
+                try {
+                    StyledDocument doc = textPane.getStyledDocument();
+                    doc.remove(0, doc.getLength());
+                    doc.insertString(0, "MyBatis SQL Logger is active and waiting for logs...\n", doc.getStyle("label-bold"));
+                } catch (BadLocationException e) {
+                    LOG.error("Error updating text pane", e);
+                }
             }
         } else if (!enable && wasEnabled) {
             LOG.info("Disabling MyBatis Log Manager");
@@ -293,14 +306,16 @@ public final class MyBatisLogManager implements Disposable {
         addBoldStyle(doc, "param-bold", PARAM_COLOR);
         addBoldStyle(doc, "time-bold", TIME_COLOR);
         
-        // 默认初始化为禁用状态下创建的UI，向用户显示状态消息
-        if (!enabled.get()) {
-            try {
+        // 显示初始状态消息
+        try {
+            if (enabled.get()) {
+                doc.insertString(0, "MyBatis SQL Logger is active and waiting for logs...\n", doc.getStyle("label-bold"));
+            } else {
                 doc.insertString(0, "MyBatis SQL Logger will start after application initialization completes...\n", doc.getStyle("label-bold"));
-                LOG.info("Added startup message to text pane");
-            } catch (BadLocationException e) {
-                LOG.error("Error adding startup message", e);
             }
+            LOG.info("Added startup message to text pane");
+        } catch (BadLocationException e) {
+            LOG.error("Error adding startup message", e);
         }
     }
     
@@ -438,18 +453,23 @@ public final class MyBatisLogManager implements Disposable {
         List<LogEntry> result = new ArrayList<>(batch.size());
         List<LogEntry> separators = new ArrayList<>();
         String currentGroup = null;
+        int groupCounter = 0;
         
-        // 首先将日志条目分组
+        // 预处理步骤：按添加顺序分配组ID，确保不会打乱原始顺序
+        Map<String, Integer> typeGroups = new HashMap<>();
         for (LogEntry entry : batch) {
             if (entry.type.equals("separator")) {
                 separators.add(entry);
-                currentGroup = null;
                 continue;
             }
             
             if (entry.type.equals("sql")) {
                 // 新SQL开始了一个新组
-                currentGroup = UUID.randomUUID().toString();
+                currentGroup = "group_" + (++groupCounter);
+                typeGroups.put(currentGroup, 1);
+            } else if (currentGroup != null) {
+                // 增加当前组中的类型计数
+                typeGroups.put(currentGroup, typeGroups.getOrDefault(currentGroup, 0) + 1);
             }
             
             if (currentGroup != null) {
@@ -464,19 +484,51 @@ public final class MyBatisLogManager implements Disposable {
         }
         
         // 按照SQL, Parameters, Complete SQL, Time的顺序排序每个组
-        for (List<LogEntry> group : groups.values()) {
-            Collections.sort(group, (a, b) -> {
-                int aOrder = getTypeOrder(a.type);
-                int bOrder = getTypeOrder(b.type);
-                return Integer.compare(aOrder, bOrder);
-            });
+        for (Map.Entry<String, List<LogEntry>> groupEntry : groups.entrySet()) {
+            List<LogEntry> group = groupEntry.getValue();
+            
+            // 只有当组中有多个元素且包含多种类型时才需要排序
+            if (group.size() > 1 && typeGroups.getOrDefault(groupEntry.getKey(), 0) > 1) {
+                Collections.sort(group, (a, b) -> {
+                    int aOrder = getTypeOrder(a.type);
+                    int bOrder = getTypeOrder(b.type);
+                    return Integer.compare(aOrder, bOrder);
+                });
+            }
+            
             result.addAll(group);
+            
+            // 在每个完整的组后添加一个分隔符，除非这是最后一个组
+            if (isCompleteGroup(group) && !groupEntry.getKey().equals("group_" + groupCounter)) {
+                LogEntry separator = new LogEntry("separator", "----------------------------------------");
+                result.add(separator);
+            }
         }
         
-        // 添加分隔符
-        result.addAll(separators);
+        // 如果还有剩余的分隔符并且不是在每个组后已添加，则添加它们
+        if (!separators.isEmpty() && !result.isEmpty() && 
+            !result.get(result.size() - 1).type.equals("separator")) {
+            result.addAll(separators);
+        }
         
         return result;
+    }
+    
+    /**
+     * 检查一个组是否包含完整的SQL执行信息
+     */
+    private boolean isCompleteGroup(List<LogEntry> group) {
+        boolean hasSql = false;
+        boolean hasParams = false;
+        boolean hasComplete = false;
+        
+        for (LogEntry entry : group) {
+            if (entry.type.equals("sql")) hasSql = true;
+            else if (entry.type.equals("params")) hasParams = true;
+            else if (entry.type.equals("complete")) hasComplete = true;
+        }
+        
+        return hasSql && hasParams && hasComplete;
     }
     
     /**

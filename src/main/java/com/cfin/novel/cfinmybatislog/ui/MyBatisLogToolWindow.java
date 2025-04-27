@@ -1,6 +1,8 @@
 package com.cfin.novel.cfinmybatislog.ui;
 
 import com.cfin.novel.cfinmybatislog.manager.MyBatisLogManager;
+import com.intellij.execution.filters.Filter;
+import com.intellij.execution.ui.ConsoleViewContentType;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.wm.ToolWindow;
 import com.intellij.openapi.wm.ToolWindowFactory;
@@ -27,6 +29,7 @@ import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.startup.StartupManager;
 import com.intellij.openapi.project.DumbAware;
 import org.jetbrains.annotations.NotNull;
+import com.intellij.openapi.diagnostic.Logger;
 
 import javax.swing.*;
 import javax.swing.border.EmptyBorder;
@@ -83,7 +86,7 @@ public class MyBatisLogToolWindow implements ToolWindowFactory, DumbAware {
     
     // 延迟初始化配置
     private static final boolean USE_LAZY_INIT = true;
-    private static final int LAZY_INIT_DELAY_MS = 1000;
+    private static final int LAZY_INIT_DELAY_MS = 500;
     private final AtomicBoolean isInitialized = new AtomicBoolean(false);
     private final AtomicBoolean isAppStartupComplete = new AtomicBoolean(false);
     
@@ -95,9 +98,13 @@ public class MyBatisLogToolWindow implements ToolWindowFactory, DumbAware {
     // 按钮悬停颜色
     private static final Color BTN_HOVER_COLOR = new JBColor(new Color(230, 230, 230), new Color(75, 75, 75));
 
+    private static final Logger LOG = Logger.getInstance(MyBatisLogToolWindow.class);
+
     @Override
     public void createToolWindowContent(@NotNull Project project, @NotNull ToolWindow toolWindow) {
         this.project = project;
+        
+        LOG.info("Creating MyBatis Log Tool Window content for project: " + project.getName());
         
         // 创建一个简单的加载中界面
         JPanel loadingPanel = new JPanel(new BorderLayout());
@@ -108,28 +115,40 @@ public class MyBatisLogToolWindow implements ToolWindowFactory, DumbAware {
         // 先显示加载中界面
         ContentFactory contentFactory = ContentFactory.getInstance();
         toolWindow.getContentManager().addContent(contentFactory.createContent(loadingPanel, "", false));
+        LOG.info("Added loading panel to tool window");
+        
+        // 先启动日志管理器，确保日志不会丢失
+        MyBatisLogManager logManager = MyBatisLogManager.getInstance(project);
+        logManager.setEnabled(true);
+        LOG.info("Enabled MyBatis Log Manager");
         
         // 在应用程序完全启动后初始化
         ApplicationManager.getApplication().invokeLater(() -> {
             isAppStartupComplete.set(true);
+            LOG.info("Application startup complete flag set to true");
             
             // 如果使用延迟初始化，则等待额外的延迟时间
             if (USE_LAZY_INIT) {
+                LOG.info("Using lazy initialization with delay: " + LAZY_INIT_DELAY_MS + "ms");
                 ApplicationManager.getApplication().executeOnPooledThread(() -> {
                     try {
                         // 延迟一段时间，确保IDE已完全启动
                         Thread.sleep(LAZY_INIT_DELAY_MS);
+                        LOG.info("Lazy initialization delay completed");
                         
                         // 在EDT线程中执行UI初始化
                         SwingUtilities.invokeLater(() -> {
+                            LOG.info("Initializing UI after startup delay");
                             initializeUiAfterStartup(toolWindow, contentFactory);
                         });
                     } catch (InterruptedException e) {
+                        LOG.error("Lazy initialization was interrupted", e);
                         Thread.currentThread().interrupt();
                     }
                 });
             } else {
                 // 不使用额外延迟时间，但仍然等待应用程序完全启动
+                LOG.info("Initializing UI immediately after application startup");
                 SwingUtilities.invokeLater(() -> {
                     initializeUiAfterStartup(toolWindow, contentFactory);
                 });
@@ -141,20 +160,27 @@ public class MyBatisLogToolWindow implements ToolWindowFactory, DumbAware {
      * 在应用程序完全启动后初始化UI
      */
     private void initializeUiAfterStartup(ToolWindow toolWindow, ContentFactory contentFactory) {
+        LOG.info("Beginning UI initialization after startup");
+        
         // 移除加载界面
         toolWindow.getContentManager().removeAllContents(true);
+        LOG.info("Removed loading panel");
         
         // 创建实际内容
+        LOG.info("Creating main panel");
         JPanel mainPanel = createMainPanel();
         
         // 添加到工具窗口
+        LOG.info("Adding main panel to tool window");
         toolWindow.getContentManager().addContent(
             contentFactory.createContent(mainPanel, "", false));
         
         // 初始化日志管理器
+        LOG.info("Initializing log manager");
         initializeLogManager();
         
         isInitialized.set(true);
+        LOG.info("UI initialization completed successfully");
         
         showStatusMessage("MyBatis Logger ready - application startup complete");
     }
@@ -221,12 +247,17 @@ public class MyBatisLogToolWindow implements ToolWindowFactory, DumbAware {
         MyBatisLogManager logManager = MyBatisLogManager.getInstance(project);
         logManager.setTextPane(logTextPane);
         
-        // 确保立即启用日志处理
-        SwingUtilities.invokeLater(() -> {
-            // 延迟一点点时间启用，确保UI已完全准备好
-            logManager.setEnabled(true);
-            showStatusMessage("MyBatis SQL Logger is now active and capturing logs");
-        });
+        // 立即启用日志处理，不使用延迟
+        logManager.setEnabled(true);
+        showStatusMessage("MyBatis SQL Logger is now active and capturing logs");
+        
+        // 清空现有的"等待初始化"消息
+        try {
+            StyledDocument doc = logTextPane.getStyledDocument();
+            doc.remove(0, doc.getLength());
+        } catch (Exception e) {
+            // 忽略可能的异常
+        }
     }
     
     /**
@@ -304,16 +335,25 @@ public class MyBatisLogToolWindow implements ToolWindowFactory, DumbAware {
         
         // 字体大小减小按钮
         JButton decreaseFontButton = createStyledButton("", AllIcons.General.Remove, "Decrease font size");
-        decreaseFontButton.addActionListener(e -> changeFontSize(-1));
+        decreaseFontButton.addActionListener(e -> {
+            changeFontSize(-1);
+            // 添加日志，帮助诊断
+            LOG.info("Decreased font size to " + getCurrentFontSize());
+        });
         
         // 字体大小显示
         JLabel fontSizeLabel = new JLabel(String.valueOf(getCurrentFontSize()));
+        fontSizeLabel.setName("fontSizeLabel"); // 添加一个唯一的名称用于查找
         fontSizeLabel.setForeground(UIUtil.getLabelForeground());
         fontSizeLabel.setBorder(JBUI.Borders.empty(0, 5));
         
         // 字体大小增加按钮
         JButton increaseFontButton = createStyledButton("", AllIcons.General.Add, "Increase font size");
-        increaseFontButton.addActionListener(e -> changeFontSize(1));
+        increaseFontButton.addActionListener(e -> {
+            changeFontSize(1);
+            // 添加日志，帮助诊断
+            LOG.info("Increased font size to " + getCurrentFontSize());
+        });
         
         // 添加到字体面板
         fontPanel.add(fontLabel);
@@ -363,23 +403,49 @@ public class MyBatisLogToolWindow implements ToolWindowFactory, DumbAware {
         
         searchPanel.add(searchFieldContainer, BorderLayout.CENTER);
         
-        // 添加搜索监听器
-        searchField.getDocument().addDocumentListener(new DocumentListener() {
+        // 添加搜索监听器 - 确保DocumentListener能正确响应事件
+        DocumentListener searchListener = new DocumentListener() {
             @Override
             public void insertUpdate(DocumentEvent e) {
-                filterLogs(searchField.getText());
+                try {
+                    String searchText = searchField.getText();
+                    LOG.info("Filter text updated: " + searchText);
+                    filterLogs(searchText);
+                } catch (Exception ex) {
+                    LOG.error("Error handling insertUpdate: " + ex.getMessage(), ex);
+                }
             }
 
             @Override
             public void removeUpdate(DocumentEvent e) {
-                filterLogs(searchField.getText());
+                try {
+                    String searchText = searchField.getText();
+                    LOG.info("Filter text updated: " + searchText);
+                    filterLogs(searchText);
+                } catch (Exception ex) {
+                    LOG.error("Error handling removeUpdate: " + ex.getMessage(), ex);
+                }
             }
 
             @Override
             public void changedUpdate(DocumentEvent e) {
-                filterLogs(searchField.getText());
+                try {
+                    String searchText = searchField.getText();
+                    LOG.info("Filter text updated: " + searchText);
+                    filterLogs(searchText);
+                } catch (Exception ex) {
+                    LOG.error("Error handling changedUpdate: " + ex.getMessage(), ex);
+                }
             }
-        });
+        };
+        
+        // 移除旧的监听器，确保不会重复添加
+        Document doc = searchField.getDocument();
+        
+        // 直接添加新的监听器，如果之前已有监听器，在添加前不需要手动移除
+        // 由于我们总是创建新的SearchPanel，所以每次都是新的文档对象
+        doc.addDocumentListener(searchListener);
+        LOG.info("Added document listener to search field");
         
         return searchPanel;
     }
@@ -398,6 +464,10 @@ public class MyBatisLogToolWindow implements ToolWindowFactory, DumbAware {
             if (selectedText != null && !selectedText.isEmpty()) {
                 CopyPasteManager.getInstance().setContents(new StringSelection(selectedText));
                 showStatusMessage("Selected text copied to clipboard");
+                LOG.info("Copied selected text to clipboard");
+            } else {
+                showStatusMessage("No text selected for copy");
+                LOG.info("No text selected for copy");
             }
         });
         buttonPanel.add(copyButton);
@@ -410,6 +480,10 @@ public class MyBatisLogToolWindow implements ToolWindowFactory, DumbAware {
                 completeSql = removeParamTypes(completeSql);
                 CopyPasteManager.getInstance().setContents(new StringSelection(completeSql));
                 showStatusMessage("Complete SQL copied to clipboard");
+                LOG.info("Copied complete SQL to clipboard");
+            } else {
+                showStatusMessage("No SQL found to copy");
+                LOG.info("No SQL found to copy");
             }
         });
         buttonPanel.add(copySqlButton);
@@ -419,8 +493,17 @@ public class MyBatisLogToolWindow implements ToolWindowFactory, DumbAware {
         clearButton.addActionListener(e -> {
             MyBatisLogManager.getInstance(project).clearLogs();
             showStatusMessage("Logs cleared");
+            LOG.info("Logs cleared");
         });
         buttonPanel.add(clearButton);
+        
+        // 添加重置UI按钮
+        JButton resetButton = createStyledButton("Reset UI", AllIcons.Actions.Refresh, "Reset UI if filters or buttons stop working");
+        resetButton.addActionListener(e -> {
+            LOG.info("Reset UI button clicked");
+            resetUI();
+        });
+        buttonPanel.add(resetButton);
         
         return buttonPanel;
     }
@@ -478,9 +561,21 @@ public class MyBatisLogToolWindow implements ToolWindowFactory, DumbAware {
      * 过滤日志并更新状态栏
      */
     private void filterLogs(String searchText) {
-        String trimmedText = searchText.trim();
-        MyBatisLogManager.getInstance(project).filterLogs(trimmedText);
-        updateStatusLabel(trimmedText);
+        try {
+            String trimmedText = searchText.trim();
+            LOG.info("Filtering logs with text: '" + trimmedText + "'");
+            
+            // 获取MyBatisLogManager实例
+            MyBatisLogManager manager = MyBatisLogManager.getInstance(project);
+            if (manager != null) {
+                manager.filterLogs(trimmedText);
+                updateStatusLabel(trimmedText);
+            } else {
+                LOG.error("Failed to get MyBatisLogManager instance for filtering");
+            }
+        } catch (Exception e) {
+            LOG.error("Error filtering logs: " + e.getMessage(), e);
+        }
     }
     
     /**
@@ -507,33 +602,93 @@ public class MyBatisLogToolWindow implements ToolWindowFactory, DumbAware {
      * @param delta 字体大小变化量
      */
     private void changeFontSize(int delta) {
-        Preferences prefs = Preferences.userNodeForPackage(MyBatisLogToolWindow.class);
-        int currentSize = getCurrentFontSize();
-        int newSize = Math.max(MIN_FONT_SIZE, Math.min(MAX_FONT_SIZE, currentSize + delta));
-        
-        if (newSize != currentSize) {
-            prefs.putInt(FONT_SIZE_PREF_KEY, newSize);
-            updateFontSize(logTextPane);
+        try {
+            Preferences prefs = Preferences.userNodeForPackage(MyBatisLogToolWindow.class);
+            int currentSize = getCurrentFontSize();
+            int newSize = Math.max(MIN_FONT_SIZE, Math.min(MAX_FONT_SIZE, currentSize + delta));
             
-            // 更新显示的字体大小标签
-            Container parent = logTextPane.getParent();
-            while (parent != null) {
-                if (parent instanceof JPanel) {
-                    for (Component c : ((JPanel) parent).getComponents()) {
-                        if (c instanceof JPanel) {
-                            for (Component innerC : ((JPanel) c).getComponents()) {
-                                if (innerC instanceof JLabel && ((JLabel) innerC).getText().matches("\\d+")) {
-                                    ((JLabel) innerC).setText(String.valueOf(newSize));
-                                    showStatusMessage("Font size changed to " + newSize);
-                                    return;
-                                }
+            if (newSize != currentSize) {
+                LOG.info("Changing font size from " + currentSize + " to " + newSize);
+                prefs.putInt(FONT_SIZE_PREF_KEY, newSize);
+                updateFontSize(logTextPane);
+                
+                // 更新显示的字体大小标签
+                Component labelComponent = findComponentByNameAndType("fontSizeLabel", JLabel.class);
+                if (labelComponent != null && labelComponent instanceof JLabel) {
+                    JLabel label = (JLabel) labelComponent;
+                    label.setText(String.valueOf(newSize));
+                    LOG.info("Updated font size label to " + newSize);
+                    showStatusMessage("Font size changed to " + newSize);
+                } else {
+                    LOG.warn("Could not find font size label to update");
+                    
+                    // 尝试使用旧方法查找标签
+                    Component parent = findFontSizeLabel();
+                    if (parent != null && parent instanceof JLabel) {
+                        ((JLabel) parent).setText(String.valueOf(newSize));
+                        LOG.info("Updated font size label using backup method");
+                        showStatusMessage("Font size changed to " + newSize);
+                    } else {
+                        LOG.warn("Both label finding methods failed");
+                    }
+                }
+            } else {
+                LOG.info("Font size not changed (current: " + currentSize + ")");
+            }
+        } catch (Exception e) {
+            LOG.error("Error changing font size: " + e.getMessage(), e);
+        }
+    }
+    
+    /**
+     * 通过名称和类型查找组件
+     */
+    private <T extends Component> Component findComponentByNameAndType(String name, Class<T> type) {
+        return findComponentByNameAndType(SwingUtilities.getWindowAncestor(logTextPane), name, type);
+    }
+    
+    /**
+     * 递归地在容器中通过名称和类型查找组件
+     */
+    private <T extends Component> Component findComponentByNameAndType(Container container, String name, Class<T> type) {
+        if (container == null) return null;
+        
+        for (Component c : container.getComponents()) {
+            if (name.equals(c.getName()) && type.isAssignableFrom(c.getClass())) {
+                return c;
+            }
+            
+            if (c instanceof Container) {
+                Component found = findComponentByNameAndType((Container) c, name, type);
+                if (found != null) {
+                    return found;
+                }
+            }
+        }
+        
+        return null;
+    }
+    
+    /**
+     * 查找字体大小标签组件
+     */
+    private Component findFontSizeLabel() {
+        Container parent = logTextPane.getParent();
+        while (parent != null) {
+            if (parent instanceof JPanel) {
+                for (Component c : ((JPanel) parent).getComponents()) {
+                    if (c instanceof JPanel) {
+                        for (Component innerC : ((JPanel) c).getComponents()) {
+                            if (innerC instanceof JLabel && ((JLabel) innerC).getText().matches("\\d+")) {
+                                return innerC;
                             }
                         }
                     }
                 }
-                parent = parent.getParent();
             }
+            parent = parent.getParent();
         }
+        return null;
     }
     
     /**
@@ -615,5 +770,124 @@ public class MyBatisLogToolWindow implements ToolWindowFactory, DumbAware {
         nonStringMatcher.appendTail(sb);
         
         return sb.toString();
+    }
+
+    /**
+     * 重置UI状态并重新初始化所有组件
+     * 用于恢复UI在出现问题时的状态
+     */
+    private void resetUI() {
+        LOG.info("Resetting UI state for MyBatis Log Tool Window");
+        try {
+            // 清空现有的文本
+            if (logTextPane != null) {
+                StyledDocument doc = logTextPane.getStyledDocument();
+                doc.remove(0, doc.getLength());
+            }
+            
+            // 刷新UI组件状态
+            refreshUIComponents();
+            
+            // 重新获取日志管理器
+            MyBatisLogManager manager = MyBatisLogManager.getInstance(project);
+            
+            // 重置管理器状态
+            if (manager != null) {
+                // 先禁用
+                manager.setEnabled(false);
+                
+                // 清空日志
+                manager.clearLogs();
+                
+                // 再次设置文本面板
+                if (logTextPane != null) {
+                    manager.setTextPane(logTextPane);
+                }
+                
+                // 再次启用
+                manager.setEnabled(true);
+                
+                LOG.info("UI reset completed successfully");
+                showStatusMessage("UI has been reset and reconnected");
+            } else {
+                LOG.error("Failed to get MyBatisLogManager instance for UI reset");
+                showStatusMessage("Failed to reset UI: Manager not available");
+            }
+        } catch (Exception e) {
+            LOG.error("Error resetting UI: " + e.getMessage(), e);
+            showStatusMessage("Error resetting UI: " + e.getMessage());
+        }
+    }
+    
+    /**
+     * 刷新所有UI组件的状态
+     * 用于恢复可能无响应的按钮和控件
+     */
+    private void refreshUIComponents() {
+        try {
+            LOG.info("Refreshing UI components");
+            
+            // 获取主面板，如果为null，则返回
+            Container parent = logTextPane.getParent();
+            if (parent == null) {
+                LOG.warn("Cannot find parent container of text pane");
+                return;
+            }
+            
+            // 向上查找，直到找到主面板
+            Container mainPanel = parent;
+            while (mainPanel != null && !(mainPanel.getLayout() instanceof BorderLayout)) {
+                mainPanel = mainPanel.getParent();
+            }
+            
+            if (mainPanel == null) {
+                LOG.warn("Cannot find main panel");
+                return;
+            }
+            
+            // 递归刷新所有组件
+            refreshComponents(mainPanel);
+            
+            // 确保文本窗格可见且活跃
+            updateFontSize(logTextPane);
+            logTextPane.revalidate();
+            logTextPane.repaint();
+            
+            LOG.info("UI components refreshed successfully");
+        } catch (Exception e) {
+            LOG.error("Error refreshing UI components: " + e.getMessage(), e);
+        }
+    }
+    
+    /**
+     * 递归刷新容器内的所有组件
+     */
+    private void refreshComponents(Container container) {
+        // 刷新容器自身
+        container.revalidate();
+        container.repaint();
+        
+        // 刷新容器内的所有组件
+        for (Component comp : container.getComponents()) {
+            // 特殊处理按钮：确保事件监听器正常工作
+            if (comp instanceof JButton) {
+                JButton button = (JButton) comp;
+                button.revalidate();
+                button.repaint();
+            }
+            // 特殊处理文本字段：确保文档监听器正常工作
+            else if (comp instanceof JTextField) {
+                JTextField textField = (JTextField) comp;
+                textField.revalidate();
+                textField.repaint();
+            }
+            // 递归处理子容器
+            else if (comp instanceof Container) {
+                refreshComponents((Container) comp);
+            } else {
+                comp.revalidate();
+                comp.repaint();
+            }
+        }
     }
 } 

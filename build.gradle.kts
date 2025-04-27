@@ -37,7 +37,7 @@ tasks {
 
   patchPluginXml {
     sinceBuild.set("231")
-    untilBuild.set("243.*")
+//    untilBuild.set("251.*")
   }
 
   signPlugin {
@@ -56,9 +56,9 @@ tasks {
     description = "Build plugin in offline mode"
     
     dependsOn("buildPlugin")
-    from("${project.buildDir}/distributions")
+    from("${layout.buildDirectory.get().asFile}/distributions")
     include("*.zip")
-    destinationDirectory.set(file("${project.buildDir}/offline-distributions"))
+    destinationDirectory.set(file("${layout.buildDirectory.get().asFile}/offline-distributions"))
   }
 }
 
@@ -69,7 +69,7 @@ tasks.register<Copy>("installPlugin") {
   
   dependsOn("buildPlugin")
   
-  from("${project.buildDir}/distributions")
+  from("${layout.buildDirectory.get().asFile}/distributions")
   include("*.zip")
   
   // 根据操作系统确定IDEA插件目录
